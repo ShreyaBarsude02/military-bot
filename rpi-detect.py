@@ -3,7 +3,22 @@ from picamera2 import Picamera2
 import cv2
 import numpy as np
 
+# Load YOLOv8 model
 model = YOLO("yolov8n-oiv7.pt")  
+
+# Define your custom risk categories
+high_risk_classes = [
+    'Aircraft', 'Airplane', 'Axe', 'Bomb', 'Bow and arrow', 'Cannon', 'Fireplace', 'Gas stove', 'Hammer', 'Handgun', 'Helicopter', 'Knife', 'Missile', 'Rifle', 'Suitcase', 'Sword', 'Tank', 'Truck', 'Van'
+]
+
+medium_risk_classes = [
+    'Backpack', 'Ball', 'Beaker', 'Belt', 'Bicycle', 'Bicycle helmet', 'Bicycle wheel', 'Boot', 'Box', 'Camera', 'Container', 'Glove', 'Torch'
+]
+
+# Colors
+COLOR_HIGH = (0, 0, 255)      # Red
+COLOR_MEDIUM = (0, 255, 255)  # Yellow
+COLOR_NORMAL = (0, 255, 0)    # Green
 
 picam2 = Picamera2()
 picam2.preview_configuration.main.size = (480, 480)
@@ -18,16 +33,31 @@ while True:
 
     for result in results:
         boxes = result.boxes
+        names = result.names  # class index to name mapping
 
-        for box, conf in zip(result.boxes.xyxy, result.boxes.conf):
+        for box, conf, cls in zip(result.boxes.xyxy, result.boxes.conf, result.boxes.cls):
             confidence = conf.item()
+            class_id = int(cls.item())
+            class_name = names[class_id]
 
             if confidence >= 0.6:
                 x1, y1, x2, y2 = map(int, box.tolist())
 
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(frame, f"{confidence:.2f}", (x1, y1 - 10), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                # Decide color based on risk class
+                if class_name in high_risk_classes:
+                    color = COLOR_HIGH
+                elif class_name in medium_risk_classes:
+                    color = COLOR_MEDIUM
+                else:
+                    color = COLOR_NORMAL  # Default green for normal
+
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                cv2.putText(frame, f"{class_name} {confidence:.2f}", (x1, y1 - 10), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+    # Add location text at top right
+    cv2.putText(frame, "Location: VIT Pune", (frame.shape[1] - 200, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
     cv2.imshow("YOLOv8 Detection", frame)
 
