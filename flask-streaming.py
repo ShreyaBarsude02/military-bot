@@ -4,6 +4,7 @@ import cv2
 import threading
 from ultralytics import YOLO
 import numpy as np
+import os
 
 app = Flask(__name__)
 picam2 = Picamera2()
@@ -14,22 +15,20 @@ frame = None
 
 def capture_frames():
     global frame
-    try:
-        while True:
-            frame = picam2.capture_array()        
+    while True:
+        frame = picam2.capture_array()        
 
-            results = model(frame)
+        results = model(frame)
 
-            for result in results:
-                frame = result.plot()
+        for result in results:
+            frame = result.plot()
 
-            cv2.imshow("YOLOv8 Detection", frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-    finally:
-        picam2.close()
-        cv2.destroyAllWindows()
-        os._exit(0)  # Stop Flask too
+        cv2.imshow("YOLOv8 Detection", frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    picam2.close()
+    cv2.destroyAllWindows()
+    os._exit(0)  # Stop Flask too
 
 @app.route('/video_feed')
 def video_feed():
