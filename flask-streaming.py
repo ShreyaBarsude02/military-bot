@@ -2,57 +2,35 @@ from picamera2 import Picamera2
 from flask import Flask, Response
 import cv2
 import threading
-from ultralytics import YOLO
 import numpy as np
+from ultralytics import YOLO
 import os
 
 app = Flask(__name__)
 picam2 = Picamera2()
 picam2.configure(picam2.create_video_configuration(main={"size": (640, 480)}))
+picam2.preview_configuration.main.format = "RGB888"
+picam2.configure("preview")
 picam2.start()
-model = YOLO("yolov8n-oiv7.pt") 
+model = YOLO("yolov8n-oiv7.pt")
+
 frame = None
-
-# def capture_frames():
-#     global frame
-#     while True:
-#         frame = picam2.capture_array()        
-
-#         results = model(frame)
-
-#         for result in results:
-#             frame = result.plot()
-
-#         cv2.imshow("YOLOv8 Detection", frame)
-#         if cv2.waitKey(1) & 0xFF == ord('q'):
-#             break
-#     picam2.close()
-#     cv2.destroyAllWindows()
-#     os._exit(0)  # Stop Flask too
 
 def capture_frames():
     global frame
-    try:
-        while True:
-            frame = picam2.capture_array()
-            results = model(frame)
-            
-            if results and len(results) > 0:
-                result = results[0]  # Safely get the first result
-                frame = result.plot()
-            else:
-                print("No results returned by model")
+    while True:
+        frame = picam2.capture_array()
+        results = model(frame)
 
-            cv2.imshow("YOLOv8 Detection", frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-    except Exception as e:
-        print("Exception in capture_frames:", e)
-    finally:
-        picam2.close()
-        cv2.destroyAllWindows()
-        os._exit(0)
+        for result in results:
+            frame = result.plot()
 
+        cv2.imshow("Camera - Press 'q' to Quit", frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    picam2.close()
+    cv2.destroyAllWindows()
+    os._exit(0)  # Stop Flask too
 
 @app.route('/video_feed')
 def video_feed():
