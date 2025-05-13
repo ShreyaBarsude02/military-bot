@@ -13,22 +13,46 @@ picam2.start()
 model = YOLO("yolov8n-oiv7.pt") 
 frame = None
 
+# def capture_frames():
+#     global frame
+#     while True:
+#         frame = picam2.capture_array()        
+
+#         results = model(frame)
+
+#         for result in results:
+#             frame = result.plot()
+
+#         cv2.imshow("YOLOv8 Detection", frame)
+#         if cv2.waitKey(1) & 0xFF == ord('q'):
+#             break
+#     picam2.close()
+#     cv2.destroyAllWindows()
+#     os._exit(0)  # Stop Flask too
+
 def capture_frames():
     global frame
-    while True:
-        frame = picam2.capture_array()        
+    try:
+        while True:
+            frame = picam2.capture_array()
+            results = model(frame)
+            
+            if results and len(results) > 0:
+                result = results[0]  # Safely get the first result
+                frame = result.plot()
+            else:
+                print("No results returned by model")
 
-        results = model(frame)
+            cv2.imshow("YOLOv8 Detection", frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+    except Exception as e:
+        print("Exception in capture_frames:", e)
+    finally:
+        picam2.close()
+        cv2.destroyAllWindows()
+        os._exit(0)
 
-        for result in results:
-            frame = result.plot()
-
-        cv2.imshow("YOLOv8 Detection", frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-    picam2.close()
-    cv2.destroyAllWindows()
-    os._exit(0)  # Stop Flask too
 
 @app.route('/video_feed')
 def video_feed():
