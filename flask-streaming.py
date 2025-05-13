@@ -7,26 +7,27 @@ app = Flask(__name__)
 picam2 = Picamera2()
 picam2.configure(picam2.create_video_configuration(main={"size": (640, 480)}))
 picam2.start()
-
+model = YOLO("yolov8n-oiv7.pt") 
 frame = None
 
 def capture_frames():
     global frame
-    while True:
-        frame = picam2.capture_array()        
+    try:
+        while True:
+            frame = picam2.capture_array()        
 
-        results = model(frame)
+            results = model(frame)
 
-        for result in results:
-            frame = result.plot()
+            for result in results:
+                frame = result.plot()
 
-        cv2.imshow("YOLOv8 Detection", frame)
-        cv2.imshow("Camera - Press 'q' to Quit", frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-    picam2.close()
-    cv2.destroyAllWindows()
-    os._exit(0)  # Stop Flask too
+            cv2.imshow("YOLOv8 Detection", frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+    finally:
+        picam2.close()
+        cv2.destroyAllWindows()
+        os._exit(0)  # Stop Flask too
 
 @app.route('/video_feed')
 def video_feed():
