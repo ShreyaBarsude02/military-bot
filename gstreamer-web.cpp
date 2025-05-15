@@ -139,29 +139,38 @@ int main() {
 
     httplib::Server svr;
 
-    svr.Get("/video_feed", [](const httplib::Request&, httplib::Response& res) {
-        res.set_header("Content-Type", "multipart/x-mixed-replace; boundary=frame");
+   svr.Get("/video_feed", [](const httplib::Request& req, httplib::Response& res) {
+    res.set_header("Content-Type", "multipart/x-mixed-replace; boundary=frame");
+    
+    res.set_chunked_content_provider(
+        "multipart/x-mixed-replace; boundary=frame",
+        [](size_t offset, httplib::DataSink &sink) {
+            while (running) {
+                Mat frame_copy;
+                {
+                    lock_guard<mutex> lock(frame_mutex);
+                    if (latest_frame.empty()) continue;
+                    frame_copy = latest_frame.clone();
+                }
 
-        while (running) {
-            Mat frame_copy;
-            {
-                lock_guard<mutex> lock(frame_mutex);
-                if (latest_frame.empty()) continue;
-                frame_copy = latest_frame.clone();
+                vector<uchar> buff;
+                imencode(".jpg", frame_copy, buff);
+
+                string header = "--frame\r\nContent-Type: image/jpeg\r\n\r\n";
+                string footer = "\r\n";
+
+                sink.write(header.data(), header.size());
+                sink.write(reinterpret_cast<const char*>(buff.data()), buff.size());
+                sink.write(footer.data(), footer.size());
+
+                std::this_thread::sleep_for(std::chrono::milliseconds(33));
             }
 
-            vector<uchar> buff;
-            imencode(".jpg", frame_copy, buff);
-
-            res.write("--frame\r\n");
-            res.write("Content-Type: image/jpeg\r\n\r\n");
-            res.write(reinterpret_cast<char*>(buff.data()), buff.size());
-            res.write("\r\n");
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(33));
+            sink.done(); // Tell httplib we're done sending
+            return true;
         }
-    });
-
+    );
+});
     cout << "Server running at http://localhost:8080/video_feed\n";
     svr.listen("0.0.0.0", 8080);
 
