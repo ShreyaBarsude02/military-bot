@@ -103,7 +103,7 @@ void camera_loop() {
         return;
     }
 
-    Net net = readNetFromONNX("yolov8n.onnx");
+    Net net = readNetFromONNX("yolov8n-oiv7.onnx");
     net.setPreferableBackend(DNN_BACKEND_OPENCV);
     net.setPreferableTarget(DNN_TARGET_CPU);
 
