@@ -8,7 +8,7 @@
 #ifndef CPPHTTPLIB_HTTPLIB_H
 #define CPPHTTPLIB_HTTPLIB_H
 
-#define CPPHTTPLIB_VERSION "0.20.1"
+#define CPPHTTPLIB_VERSION "0.20.0"
 
 /*
  * Configuration
@@ -145,10 +145,6 @@
 #define CPPHTTPLIB_LISTEN_BACKLOG 5
 #endif
 
-#ifndef CPPHTTPLIB_MAX_LINE_LENGTH
-#define CPPHTTPLIB_MAX_LINE_LENGTH 32768
-#endif
-
 /*
  * Headers
  */
@@ -191,9 +187,6 @@ using ssize_t = long;
 #include <io.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
-
-// afunix.h uses types declared in winsock2.h, so has to be included after it.
-#include <afunix.h>
 
 #ifndef WSA_FLAG_NO_HANDLE_INHERIT
 #define WSA_FLAG_NO_HANDLE_INHERIT 0x80
@@ -1087,7 +1080,8 @@ private:
   bool listen_internal();
 
   bool routing(Request &req, Response &res, Stream &strm);
-  bool handle_file_request(const Request &req, Response &res);
+  bool handle_file_request(const Request &req, Response &res,
+                           bool head = false);
   bool dispatch_request(Request &req, Response &res,
                         const Handlers &handlers) const;
   bool dispatch_request_for_content_reader(
@@ -2065,9 +2059,7 @@ template <size_t N> inline constexpr size_t str_len(const char (&)[N]) {
 }
 
 inline bool is_numeric(const std::string &str) {
-  return !str.empty() &&
-         std::all_of(str.cbegin(), str.cend(),
-                     [](unsigned char c) { return std::isdigit(c); });
+  return !str.empty() && std::all_of(str.begin(), str.end(), ::isdigit);
 }
 
 inline uint64_t get_header_value_u64(const Headers &headers,
@@ -3072,11 +3064,6 @@ inline bool stream_line_reader::getline() {
 #endif
 
   for (size_t i = 0;; i++) {
-    if (size() >= CPPHTTPLIB_MAX_LINE_LENGTH) {
-      // Treat exceptionally long lines as an error to
-      // prevent infinite loops/memory exhaustion
-      return false;
-    }
     char byte;
     auto n = strm_.read(&byte, 1);
 
@@ -3378,7 +3365,7 @@ private:
   time_t write_timeout_sec_;
   time_t write_timeout_usec_;
   time_t max_timeout_msec_;
-  const std::chrono::time_point<std::chrono::steady_clock> start_time_;
+  const std::chrono::time_point<std::chrono::steady_clock> start_time;
 
   std::vector<char> read_buff_;
   size_t read_buff_off_ = 0;
@@ -3416,7 +3403,7 @@ private:
   time_t write_timeout_sec_;
   time_t write_timeout_usec_;
   time_t max_timeout_msec_;
-  const std::chrono::time_point<std::chrono::steady_clock> start_time_;
+  const std::chrono::time_point<std::chrono::steady_clock> start_time;
 };
 #endif
 
@@ -3551,6 +3538,7 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
     hints.ai_flags = socket_flags;
   }
 
+#ifndef _WIN32
   if (hints.ai_family == AF_UNIX) {
     const auto addrlen = host.length();
     if (addrlen > sizeof(sockaddr_un::sun_path)) { return INVALID_SOCKET; }
@@ -3574,18 +3562,10 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
           sizeof(addr) - sizeof(addr.sun_path) + addrlen);
 
 #ifndef SOCK_CLOEXEC
-#ifndef _WIN32
       fcntl(sock, F_SETFD, FD_CLOEXEC);
-#endif
 #endif
 
       if (socket_options) { socket_options(sock); }
-
-#ifdef _WIN32
-      // Setting SO_REUSEADDR seems not to work well with AF_UNIX on windows, so
-      // remove the option.
-      detail::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 0);
-#endif
 
       bool dummy;
       if (!bind_or_connect(sock, hints, dummy)) {
@@ -3595,6 +3575,7 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
     }
     return sock;
   }
+#endif
 
   auto service = std::to_string(port);
 
@@ -6065,8 +6046,6 @@ inline void calc_actual_timeout(time_t max_timeout_msec, time_t duration_msec,
   auto actual_timeout_msec =
       (std::min)(max_timeout_msec - duration_msec, timeout_msec);
 
-  if (actual_timeout_msec < 0) { actual_timeout_msec = 0; }
-
   actual_timeout_sec = actual_timeout_msec / 1000;
   actual_timeout_usec = (actual_timeout_msec % 1000) * 1000;
 }
@@ -6081,7 +6060,7 @@ inline SocketStream::SocketStream(
       read_timeout_usec_(read_timeout_usec),
       write_timeout_sec_(write_timeout_sec),
       write_timeout_usec_(write_timeout_usec),
-      max_timeout_msec_(max_timeout_msec), start_time_(start_time),
+      max_timeout_msec_(max_timeout_msec), start_time(start_time),
       read_buff_(read_buff_size_, 0) {}
 
 inline SocketStream::~SocketStream() = default;
@@ -6179,7 +6158,7 @@ inline socket_t SocketStream::socket() const { return sock_; }
 
 inline time_t SocketStream::duration() const {
   return std::chrono::duration_cast<std::chrono::milliseconds>(
-             std::chrono::steady_clock::now() - start_time_)
+             std::chrono::steady_clock::now() - start_time)
       .count();
 }
 
@@ -6879,7 +6858,8 @@ Server::read_content_core(Stream &strm, Request &req, Response &res,
   return true;
 }
 
-inline bool Server::handle_file_request(const Request &req, Response &res) {
+inline bool Server::handle_file_request(const Request &req, Response &res,
+                                        bool head) {
   for (const auto &entry : base_dirs_) {
     // Prefix match
     if (!req.path.compare(0, entry.mount_point.size(), entry.mount_point)) {
@@ -6912,7 +6892,7 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
                 return true;
               });
 
-          if (req.method != "HEAD" && file_request_handler_) {
+          if (!head && file_request_handler_) {
             file_request_handler_(req, res);
           }
 
@@ -7046,8 +7026,9 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
   }
 
   // File handler
-  if ((req.method == "GET" || req.method == "HEAD") &&
-      handle_file_request(req, res)) {
+  auto is_head_request = req.method == "HEAD";
+  if ((req.method == "GET" || is_head_request) &&
+      handle_file_request(req, res, is_head_request)) {
     return true;
   }
 
@@ -7337,9 +7318,8 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
   }
 
   // Setup `is_connection_closed` method
-  auto sock = strm.socket();
-  req.is_connection_closed = [sock]() {
-    return !detail::is_socket_alive(sock);
+  req.is_connection_closed = [&]() {
+    return !detail::is_socket_alive(strm.socket());
   };
 
   // Routing
@@ -9220,7 +9200,7 @@ inline SSLSocketStream::SSLSocketStream(
       read_timeout_usec_(read_timeout_usec),
       write_timeout_sec_(write_timeout_sec),
       write_timeout_usec_(write_timeout_usec),
-      max_timeout_msec_(max_timeout_msec), start_time_(start_time) {
+      max_timeout_msec_(max_timeout_msec), start_time(start_time) {
   SSL_clear_mode(ssl, SSL_MODE_AUTO_RETRY);
 }
 
@@ -9326,7 +9306,7 @@ inline socket_t SSLSocketStream::socket() const { return sock_; }
 
 inline time_t SSLSocketStream::duration() const {
   return std::chrono::duration_cast<std::chrono::milliseconds>(
-             std::chrono::steady_clock::now() - start_time_)
+             std::chrono::steady_clock::now() - start_time)
       .count();
 }
 
