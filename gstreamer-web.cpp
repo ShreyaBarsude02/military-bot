@@ -5,7 +5,7 @@
 #include <mutex>
 #include <vector>
 #include <fstream>
-#include "httplib.h"  // Add this header from cpp-httplib
+#include "httplib.h" // Add this header from cpp-httplib
 
 using namespace cv;
 using namespace dnn;
@@ -23,20 +23,25 @@ const int inputHeight = 640;
 vector<string> classNames;
 
 // GStreamer pipeline for Pi camera
-string gstreamer_pipeline(int capture_width, int capture_height, int framerate, int display_width, int display_height) {
+string gstreamer_pipeline(int capture_width, int capture_height, int framerate, int display_width, int display_height)
+{
     return "libcamerasrc ! "
-           "video/x-raw, width=(int)" + to_string(capture_width) +
+           "video/x-raw, width=(int)" +
+           to_string(capture_width) +
            ", height=(int)" + to_string(capture_height) +
            ", framerate=(fraction)" + to_string(framerate) + "/1 ! "
-           "videoconvert ! videoscale ! "
-           "video/x-raw, width=(int)" + to_string(display_width) +
+                                                             "videoconvert ! videoscale ! "
+                                                             "video/x-raw, width=(int)" +
+           to_string(display_width) +
            ", height=(int)" + to_string(display_height) + " ! appsink";
 }
 
-void drawPred(int classId, float conf, int left, int top, int right, int bottom, Mat& frame) {
+void drawPred(int classId, float conf, int left, int top, int right, int bottom, Mat &frame)
+{
     rectangle(frame, Point(left, top), Point(right, bottom), Scalar(0, 255, 0), 2);
     string label = format("%.2f", conf);
-    if (!classNames.empty()) {
+    if (!classNames.empty())
+    {
         CV_Assert(classId < (int)classNames.size());
         label = classNames[classId] + ": " + label;
     }
@@ -48,25 +53,29 @@ void drawPred(int classId, float conf, int left, int top, int right, int bottom,
     putText(frame, label, Point(left, top), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(), 1);
 }
 
-void postprocess(Mat& frame, const vector<Mat>& outs) {
+void postprocess(Mat &frame, const vector<Mat> &outs)
+{
     vector<int> classIds;
     vector<float> confidences;
     vector<Rect> boxes;
 
-    float* data = (float*)outs[0].data;
+    float *data = (float *)outs[0].data;
     const int dimensions = 85;
     const int rows = outs[0].rows;
 
-    for (int i = 0; i < rows; ++i) {
+    for (int i = 0; i < rows; ++i)
+    {
         float confidence = data[4];
-        if (confidence >= confThreshold) {
-            float* classesScores = data + 5;
+        if (confidence >= confThreshold)
+        {
+            float *classesScores = data + 5;
             Mat scores(1, 80, CV_32FC1, classesScores);
             Point classIdPoint;
             double maxClassScore;
             minMaxLoc(scores, 0, &maxClassScore, 0, &classIdPoint);
 
-            if (maxClassScore > confThreshold) {
+            if (maxClassScore > confThreshold)
+            {
                 confidences.push_back(confidence * (float)maxClassScore);
                 classIds.push_back(classIdPoint.x);
 
@@ -87,17 +96,20 @@ void postprocess(Mat& frame, const vector<Mat>& outs) {
     vector<int> indices;
     NMSBoxes(boxes, confidences, confThreshold, nmsThreshold, indices);
 
-    for (int idx : indices) {
+    for (int idx : indices)
+    {
         Rect box = boxes[idx];
         drawPred(classIds[idx], confidences[idx], box.x, box.y,
                  box.x + box.width, box.y + box.height, frame);
     }
 }
 
-void camera_loop() {
+void camera_loop()
+{
     string pipeline = gstreamer_pipeline(640, 480, 30, 640, 480);
     VideoCapture cap(pipeline, cv::CAP_GSTREAMER);
-    if (!cap.isOpened()) {
+    if (!cap.isOpened())
+    {
         cerr << "Failed to open camera using GStreamer pipeline!\n";
         running = false;
         return;
@@ -108,12 +120,14 @@ void camera_loop() {
     net.setPreferableTarget(DNN_TARGET_CPU);
 
     Mat frame;
-    while (running) {
+    while (running)
+    {
         cap >> frame;
-        if (frame.empty()) continue;
+        if (frame.empty())
+            continue;
 
         Mat blob;
-        blobFromImage(frame, blob, 1/255.0, Size(inputWidth, inputHeight), Scalar(), true, false);
+        blobFromImage(frame, blob, 1 / 255.0, Size(inputWidth, inputHeight), Scalar(), true, false);
         net.setInput(blob);
 
         vector<Mat> outputs;
@@ -130,16 +144,19 @@ void camera_loop() {
     }
 }
 
-int main() {
+int main()
+{
     ifstream ifs("coco.names");
     string line;
-    while (getline(ifs, line)) classNames.push_back(line);
+    while (getline(ifs, line))
+        classNames.push_back(line);
 
     thread cam_thread(camera_loop);
 
     httplib::Server svr;
 
-   svr.Get("/video_feed", [](const httplib::Request& req, httplib::Response& res) {
+    svr.Get("/video_feed", [](const httplib::Request &req, httplib::Response &res)
+            {
     res.set_header("Content-Type", "multipart/x-mixed-replace; boundary=frame");
     
     res.set_chunked_content_provider(
@@ -169,8 +186,7 @@ int main() {
             sink.done(); // Tell httplib we're done sending
             return true;
         }
-    );
-});
+    ); });
     cout << "Server running at http://localhost:8080/video_feed\n";
     svr.listen("0.0.0.0", 8080);
 
